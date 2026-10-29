@@ -1,0 +1,456 @@
+# Wii port overlay.
+#
+# The engine submodules stay untouched. For Wii builds the superproject
+#  - swaps desktop platform sources for the libogc ones in Source/WiiPlatform, and
+#  - applies the patches in Source/WiiPatches to copies of upstream files in the
+#    build tree. Patches must apply exactly, so an upstream change that moves the
+#    patched code stops the configure step instead of being silently reverted.
+
+include_guard(GLOBAL)
+
+set(BALLANCE_WII_PLATFORM_DIR "${PROJECT_SOURCE_DIR}/Source/WiiPlatform")
+set(BALLANCE_WII_PATCH_DIR "${PROJECT_SOURCE_DIR}/Source/WiiPatches")
+set(BALLANCE_WII_PATCHED_DIR "${PROJECT_BINARY_DIR}/WiiPatched")
+
+find_package(Git REQUIRED)
+
+# Static builds expose most components as ALIAS targets of <Name>Static.
+function(_ballance_wii_resolve_target out target)
+    if (NOT TARGET ${target})
+        message(FATAL_ERROR "[Wii] Target '${target}' does not exist")
+    endif ()
+    get_target_property(_aliased ${target} ALIASED_TARGET)
+    if (_aliased)
+        set(${out} ${_aliased} PARENT_SCOPE)
+    else ()
+        set(${out} ${target} PARENT_SCOPE)
+    endif ()
+endfunction()
+
+# Absolute path of every source of a target.
+function(_ballance_wii_absolute_sources out target)
+    get_target_property(_sources ${target} SOURCES)
+    get_target_property(_source_dir ${target} SOURCE_DIR)
+    set(_result "")
+    foreach (_source IN LISTS _sources)
+        if (_source MATCHES "^\\$<")
+            list(APPEND _result "${_source}")
+        else ()
+            get_filename_component(_absolute "${_source}" ABSOLUTE BASE_DIR "${_source_dir}")
+            list(APPEND _result "${_absolute}")
+        endif ()
+    endforeach ()
+    set(${out} "${_result}" PARENT_SCOPE)
+endfunction()
+
+# ballance_wii_replace_sources(<target> REMOVE <file>... ADD <file>...)
+#
+# Replaces upstream sources (absolute paths) with Wii implementations.
+function(ballance_wii_replace_sources target)
+    cmake_parse_arguments(PARSE_ARGV 1 _arg "" "" "REMOVE;ADD")
+    _ballance_wii_resolve_target(_real ${target})
+    _ballance_wii_absolute_sources(_sources ${_real})
+
+    foreach (_file IN LISTS _arg_REMOVE)
+        get_filename_component(_file "${_file}" ABSOLUTE)
+        list(FIND _sources "${_file}" _index)
+        if (_index EQUAL -1)
+            message(FATAL_ERROR "[Wii] ${_real} does not compile ${_file}; update cmake/WiiPort.cmake")
+        endif ()
+        list(REMOVE_AT _sources ${_index})
+    endforeach ()
+
+    set_target_properties(${_real} PROPERTIES SOURCES "${_sources}")
+    if (_arg_ADD)
+        target_sources(${_real} PRIVATE ${_arg_ADD})
+    endif ()
+endfunction()
+
+# ballance_wii_patch(<name>
+#     ROOT <upstream directory>
+#     PATCH <patch file>...
+#     FILES <paths relative to ROOT>...
+#     TARGETS <targets>...
+#     [PUBLIC_HEADERS])
+#
+# Copies FILES out of ROOT, applies each PATCH in turn to the copies and makes
+# TARGETS build the patched copies. A file can only be copied once, so patches
+# to the same file go in the same call. List a header's same-directory
+# includers in FILES too so they pick up the patched header. PUBLIC_HEADERS
+# also gives every consumer of TARGETS the patched headers, for headers that
+# change a public type.
+function(ballance_wii_patch name)
+    cmake_parse_arguments(PARSE_ARGV 1 _arg "PUBLIC_HEADERS" "ROOT" "PATCH;FILES;TARGETS")
+
+    set(_staging "${BALLANCE_WII_PATCHED_DIR}/${name}.staging")
+    set(_output "${BALLANCE_WII_PATCHED_DIR}/${name}")
+    file(REMOVE_RECURSE "${_staging}")
+    file(MAKE_DIRECTORY "${_staging}")
+
+    # Normalize line endings so CRLF checkouts and LF patches agree.
+    foreach (_file IN LISTS _arg_FILES)
+        file(READ "${_arg_ROOT}/${_file}" _content)
+        string(REPLACE "\r\n" "\n" _content "${_content}")
+        file(WRITE "${_staging}/${_file}" "${_content}")
+    endforeach ()
+
+    # A private repository keeps git from resolving paths against an enclosing checkout.
+    execute_process(
+            COMMAND "${GIT_EXECUTABLE}" init -q
+            WORKING_DIRECTORY "${_staging}"
+            RESULT_VARIABLE _result
+    )
+    foreach (_patch_file IN LISTS _arg_PATCH)
+        file(READ "${_patch_file}" _patch)
+        string(REPLACE "\r\n" "\n" _patch "${_patch}")
+        file(WRITE "${_staging}.patch" "${_patch}")
+        execute_process(
+                COMMAND "${GIT_EXECUTABLE}" apply --whitespace=nowarn "${_staging}.patch"
+                WORKING_DIRECTORY "${_staging}"
+                RESULT_VARIABLE _result
+                OUTPUT_VARIABLE _out
+                ERROR_VARIABLE _out
+        )
+        if (NOT _result EQUAL 0)
+            message(FATAL_ERROR
+                    "[Wii] ${_patch_file} no longer applies to ${_arg_ROOT}.\n"
+                    "Re-merge the patch against the current submodule.\n${_out}")
+        endif ()
+    endforeach ()
+
+    set(_patched_sources "")
+    set(_patched_header_dirs "")
+    foreach (_file IN LISTS _arg_FILES)
+        get_filename_component(_output_dir "${_output}/${_file}" DIRECTORY)
+        file(MAKE_DIRECTORY "${_output_dir}")
+        file(COPY_FILE "${_staging}/${_file}" "${_output}/${_file}" ONLY_IF_DIFFERENT)
+        get_filename_component(_original "${_arg_ROOT}/${_file}" ABSOLUTE)
+        if (_file MATCHES "\\.(c|cc|cpp|cxx)$")
+            list(APPEND _patched_sources "${_original}")
+        else ()
+            get_filename_component(_dir "${_output}/${_file}" DIRECTORY)
+            list(APPEND _patched_header_dirs "${_dir}")
+        endif ()
+    endforeach ()
+    list(REMOVE_DUPLICATES _patched_header_dirs)
+    file(REMOVE_RECURSE "${_staging}")
+    file(REMOVE "${_staging}.patch")
+
+    foreach (_target IN LISTS _arg_TARGETS)
+        _ballance_wii_resolve_target(_real ${_target})
+        _ballance_wii_absolute_sources(_sources ${_real})
+        set(_add "")
+        foreach (_original IN LISTS _patched_sources)
+            list(FIND _sources "${_original}" _index)
+            if (_index EQUAL -1)
+                continue()
+            endif ()
+            list(REMOVE_AT _sources ${_index})
+            file(RELATIVE_PATH _relative "${_arg_ROOT}" "${_original}")
+            list(APPEND _add "${_output}/${_relative}")
+        endforeach ()
+        set_target_properties(${_real} PROPERTIES SOURCES "${_sources}")
+        if (_add)
+            target_sources(${_real} PRIVATE ${_add})
+            # Patched copies still include their neighbours from the original tree.
+            foreach (_source IN LISTS _add)
+                file(RELATIVE_PATH _relative "${_output}" "${_source}")
+                get_filename_component(_relative_dir "${_relative}" DIRECTORY)
+                target_include_directories(${_real} PRIVATE "${_arg_ROOT}/${_relative_dir}")
+            endforeach ()
+        endif ()
+        if (_patched_header_dirs)
+            if (_arg_PUBLIC_HEADERS)
+                foreach (_dir IN LISTS _patched_header_dirs)
+                    target_include_directories(${_real} BEFORE PUBLIC "$<BUILD_INTERFACE:${_dir}>")
+                endforeach ()
+            else ()
+                target_include_directories(${_real} BEFORE PRIVATE ${_patched_header_dirs})
+            endif ()
+        endif ()
+    endforeach ()
+
+    set_property(DIRECTORY "${PROJECT_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_arg_PATCH})
+    foreach (_file IN LISTS _arg_FILES)
+        set_property(DIRECTORY "${PROJECT_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_arg_ROOT}/${_file}")
+    endforeach ()
+endfunction()
+
+# Identifies the physics engine a build makes collision surfaces with: its
+# sources, the Wii patches to them and the compiler. Cache files of built
+# surfaces (WiiPhysicsShapes.cpp) are only read back by a build with the same
+# identity; changing any of these files configures again.
+function(_ballance_wii_physics_builder_id out ivp_dir)
+    file(GLOB_RECURSE _files "${ivp_dir}/*.cxx" "${ivp_dir}/*.hxx" "${ivp_dir}/*.cpp" "${ivp_dir}/*.h"
+            "${ivp_dir}/*.c")
+    file(GLOB _patches "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/ivp-*.patch")
+    list(SORT _files)
+    list(SORT _patches)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _config)
+    set(_digest "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION} ${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${_config}}")
+    foreach (_file IN LISTS _files _patches)
+        file(SHA1 "${_file}" _hash)
+        file(RELATIVE_PATH _name "${PROJECT_SOURCE_DIR}" "${_file}")
+        string(APPEND _digest "\n${_name} ${_hash}")
+    endforeach ()
+    string(SHA1 _id "${_digest}")
+    set_property(DIRECTORY "${PROJECT_SOURCE_DIR}" APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_files} ${_patches})
+    set(${out} "${_id}" PARENT_SCOPE)
+endfunction()
+
+# --- Component hooks, called from Source/CMakeLists.txt after each add_subdirectory ---
+
+# VxMath: the libogc platform layer replaces the SDL3 one.
+function(ballance_wii_port_vxmath)
+    set(_src "${PROJECT_SOURCE_DIR}/Source/VxMath/src")
+    set(_wii "${BALLANCE_WII_PLATFORM_DIR}/VxMath")
+    ballance_wii_replace_sources(VxMath
+            REMOVE
+            "${_src}/VxSharedLibrarySDL3.cpp"
+            "${_src}/VxMemoryMappedFileSDL3.cpp"
+            "${_src}/VxWindowFunctionsSDL3.cpp"
+            "${_src}/VxTimeProfilerSDL3.cpp"
+            "${_src}/VxMutexSDL3.cpp"
+            "${_src}/VxThreadSDL3.cpp"
+            ADD
+            "${_wii}/VxSharedLibraryOgc.cpp"
+            "${_wii}/VxMemoryMappedFileOgc.cpp"
+            "${_wii}/VxWindowFunctionsOgc.cpp"
+            "${_wii}/VxTimeProfilerOgc.cpp"
+            "${_wii}/VxMutexOgc.cpp"
+            "${_wii}/VxThreadOgc.cpp"
+    )
+    _ballance_wii_resolve_target(_vxmath VxMath)
+    target_include_directories(${_vxmath} PUBLIC "$<BUILD_INTERFACE:${BALLANCE_WII_PLATFORM_DIR}/include>")
+    # 32-bit pixels are host-order words: kernels that addressed their bytes
+    # (24-bit conversions, colour quantizers, bump maps) read and write words.
+    ballance_wii_patch(VxMathEndian
+            ROOT "${PROJECT_SOURCE_DIR}/Source/VxMath"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/VxMath/big-endian.patch"
+            FILES src/VxBlitKernels.cpp src/VxBlitEngineClass.cpp src/VxImageKernels.cpp
+            TARGETS VxMath
+    )
+endfunction()
+
+# CK2: big-endian state chunks and files, and Wii storage paths ("sd:/").
+# Chunks keep the little-endian file layout in memory (CKChunkWord in
+# CKStateChunk.h), so the patched header is public; CKAll.h and CKFile.h include
+# it from the same directory and come along unchanged.
+function(ballance_wii_port_ck2)
+    ballance_wii_patch(CK2
+            ROOT "${PROJECT_SOURCE_DIR}/Source/CK2"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/CK2/big-endian.patch"
+            FILES include/CKStateChunk.h include/CKAll.h include/CKFile.h
+                  src/CKStateChunk.cpp src/CKFile.cpp src/CKParameter.cpp src/CKWaveSound.cpp
+            TARGETS CK2
+            PUBLIC_HEADERS
+    )
+    ballance_wii_patch(CK2Paths
+            ROOT "${PROJECT_SOURCE_DIR}/Source/CK2"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/CK2/device-paths.patch"
+            FILES src/CKPathManager.cpp
+            TARGETS CK2
+    )
+    # The object table grows by half instead of by 100 entries at a time.
+    ballance_wii_patch(CK2Objects
+            ROOT "${PROJECT_SOURCE_DIR}/Source/CK2"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/CK2/object-table-growth.patch"
+            FILES src/CKObjectManager.cpp
+            TARGETS CK2
+    )
+endfunction()
+
+# RenderEngine: static GX rasterizer registration and Wii display discovery.
+function(ballance_wii_port_render_engine)
+    set(_root "${PROJECT_SOURCE_DIR}/Source/RenderEngine")
+    ballance_wii_patch(RenderEngine
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/RenderEngine/static-gx-rasterizer.patch"
+            FILES src/CK2_3D.cpp
+            TARGETS CK2_3D
+    )
+    # Animation controller keys and bitmap save properties are raw chunk words.
+    ballance_wii_patch(RenderEngineEndian
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/RenderEngine/big-endian.patch"
+            FILES src/CKObjectAnimation.cpp src/CKSprite.cpp src/CKTexture.cpp
+            TARGETS CK2_3D
+    )
+    # On a 16:9 set the view widens to fill the stretched picture; the
+    # projection, the culling frustum and picking widen together. State guards
+    # around special draws let the GX rasterizer copy the state in one go.
+    ballance_wii_patch(RenderEngineWidescreen
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/RenderEngine/widescreen.patch"
+                  "${BALLANCE_WII_PATCH_DIR}/RenderEngine/state-guard.patch"
+            FILES src/CKRenderContext.cpp src/CKRenderedScene.cpp
+            TARGETS CK2_3D
+    )
+    # Meshes skip the per-frame index range checks while their index arrays
+    # stay as they were (the GX rasterizer clamps indices anyway).
+    ballance_wii_patch(RenderEngineMesh
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/RenderEngine/mesh-index-checks.patch"
+            FILES src/CKMesh.cpp
+            TARGETS CK2_3D
+    )
+    _ballance_wii_resolve_target(_ck2_3d CK2_3D)
+    target_compile_definitions(${_ck2_3d} PRIVATE CKRE_STATIC_GX_RASTERIZER)
+    target_link_libraries(${_ck2_3d} PUBLIC CKGXRasterizer)
+
+    ballance_wii_replace_sources(CKRasterizerLib
+            REMOVE "${_root}/src/CKRasterizer/CKRasterizerLib/CKRasterizerDriverCaps.cpp"
+            ADD "${BALLANCE_WII_PLATFORM_DIR}/RenderEngine/CKRasterizerDriverCapsOgc.cpp"
+    )
+
+    # POSIX module probing compiles against the "no dynamic loader" dlfcn.h.
+    foreach (_target IN ITEMS ${_ck2_3d} CKRasterizerLib)
+        target_include_directories(${_target} PRIVATE "${BALLANCE_WII_PLATFORM_DIR}/include")
+    endforeach ()
+endfunction()
+
+# Plugins: CK2's CKJpegDecoder.cpp already compiles stb_image (JPEG only, no
+# stdio); a second copy in AVIReader collides once both are linked statically.
+# The readers parse little-endian files and hand out host-order pixels and
+# samples. Headers are included from their own directory, so every file of a
+# reader whose header changes is copied with it.
+function(ballance_wii_port_plugins)
+    set(_root "${PROJECT_SOURCE_DIR}/Source/Plugins")
+    ballance_wii_replace_sources(AVIReaderStatic
+            REMOVE "${_root}/AVIReader/StbImageImpl.cpp"
+    )
+    # On the Wii, image files are read whole, as compositions are (see
+    # VxMemoryMappedFileOgc.cpp), instead of through stdio.
+    ballance_wii_patch(Plugins
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/Plugins/big-endian.patch"
+                  "${BALLANCE_WII_PATCH_DIR}/Plugins/image-file-reads.patch"
+            FILES ImageReader/ImageReader.h ImageReader/BmpReader.h ImageReader/TgaReader.h
+                  ImageReader/PcxReader.h ImageReader/ImageReader.cpp ImageReader/BmpReader.cpp
+                  ImageReader/TgaReader.cpp ImageReader/PcxReader.cpp
+                  WavReader/WavReader.cpp
+                  AVIReader/AVIReader.h AVIReader/AviDemuxer.h AVIReader/AviTypes.h AVIReader/FrameDecoder.h
+                  AVIReader/RiffReader.h AVIReader/AVIReader.cpp AVIReader/AviDemuxer.cpp
+                  AVIReader/FrameDecoder.cpp AVIReader/RiffReader.cpp
+            TARGETS ImageReaderStatic WavReaderStatic AVIReaderStatic
+    )
+endfunction()
+
+# BuildingBlocks: big-endian and non-x86 fixes.
+function(ballance_wii_port_building_blocks)
+    set(_root "${PROJECT_SOURCE_DIR}/Source/BuildingBlocks")
+    ballance_wii_patch(BuildingBlocksAddons1
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/texture-processing-any-arch.patch"
+            FILES BuildingBlocksAddons1/TextureProcessing.h BuildingBlocksAddons1/TextureProcessing.cpp
+            TARGETS BuildingBlocksAddons1Static
+    )
+    ballance_wii_patch(Materials
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/texture-sinus-big-endian.patch"
+            FILES Materials-Textures/Behaviors/TextureSinus.cpp
+            TARGETS MaterialsStatic
+    )
+    # The little-endian Database.tdb file, pixel bytes and raw buffers that
+    # blocks save in files.
+    ballance_wii_patch(BuildingBlocksEndian
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/big-endian.patch"
+            FILES TT_DatabaseManager_RT/DatabaseManager.cpp TT_Toolbox_RT/Behaviors/HighMapMeshform.cpp
+                  BuildingBlocksAddons1/Behaviors/CombineTexture.cpp TT_Gravity_RT/Behaviors/TextureSine.cpp
+            TARGETS TT_DatabaseManager_RTStatic TT_Toolbox_RTStatic BuildingBlocksAddons1Static TT_Gravity_RTStatic
+    )
+    # Unlimited Controller keeps -1 in plain chars (unsigned on PowerPC), and
+    # its load-time swap must swap a float/int union once.
+    ballance_wii_patch(Characters
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/unlimited-controller.patch"
+            FILES Characters/Behaviors/UnlimitedParams.h Characters/Behaviors/UnlimitedController.cpp
+            TARGETS CharactersStatic
+    )
+    # Blocks that read typed text ask for the on-screen keyboard.
+    ballance_wii_patch(TextInput
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/text-input.patch"
+            FILES TT_Toolbox_RT/Behaviors/InputString.cpp Controllers/Behaviors/EditString.cpp
+            TARGETS TT_Toolbox_RTStatic ControllersStatic
+    )
+    # Texts the game loads, such as the tutorial naming PC keys, come from the
+    # Wii versions installed with the port when there are any.
+    ballance_wii_patch(PortFiles
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/port-files.patch"
+            FILES Logics/Behaviors/LoadString.cpp
+            TARGETS LogicsStatic
+    )
+    # The game swaps in its small sounds when memory is short, as it always is
+    # on the Wii, by finding its "\Sounds\" path: compare paths whatever their
+    # separators, case or "." segments.
+    ballance_wii_patch(ReplacePath
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/replace-path.patch"
+            FILES TT_Toolbox_RT/Behaviors/ReplacePath.cpp
+            TARGETS TT_Toolbox_RTStatic
+    )
+    # Physics: building a level's collision trees clustered its pieces with
+    # six scratch vectors per tree node and recomputed every piece's box at
+    # each level; the same trees now come from cached boxes and shared scratch.
+    ballance_wii_patch(IvpLedgeSoup
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/ivp-ledge-soup-clustering.patch"
+            FILES physics_RT/ivp/ivp_compact_builder/ivp_surbuild_ledge_soup.cxx
+            TARGETS ivp_compact_builder
+    )
+    # Physicalize keeps the collision surfaces it builds by the geometry they
+    # come from, in memory and in Wii/Cache/ next to the game, so loading a
+    # level again does not build them again (WiiPhysicsShapes.h).
+    ballance_wii_patch(PhysicsShapes
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/physics-shape-cache.patch"
+            FILES physics_RT/CKIpionManager.cpp
+            TARGETS physics_RTStatic
+    )
+    set(_shapes "${BALLANCE_WII_PLATFORM_DIR}/Physics/WiiPhysicsShapes.cpp")
+    _ballance_wii_resolve_target(_physics physics_RTStatic)
+    target_sources(${_physics} PRIVATE "${_shapes}")
+    target_include_directories(${_physics} PUBLIC "$<BUILD_INTERFACE:${BALLANCE_WII_PLATFORM_DIR}/Physics>")
+    _ballance_wii_physics_builder_id(_builder "${_root}/physics_RT/ivp")
+    set_source_files_properties("${_shapes}" TARGET_DIRECTORY ${_physics}
+            PROPERTIES COMPILE_DEFINITIONS "WII_PHYSICS_SHAPES_BUILDER=\"${_builder}\"")
+    # Fonts: big-endian font manager chunks and atlas texels; with no system
+    # fonts, TrueType fonts come from a Fonts folder next to the game, and font
+    # indices from the PC's font list fall back to Arial or Roboto.
+    ballance_wii_patch(InterfaceFonts
+            ROOT "${_root}"
+            PATCH "${BALLANCE_WII_PATCH_DIR}/BuildingBlocks/interface-fonts.patch"
+            FILES Interface/CKFontManager.cpp Interface/CKStbFontBackend.cpp
+            TARGETS InterfaceStatic
+    )
+endfunction()
+
+# Code generation settings for every target in the tree:
+#  - everything is linked into one executable, so position-independent code
+#    only costs registers and GOT loads on Broadway;
+#  - devkitPPC's GCC (15.2) crashes in the LTO link step (try_forward_edges,
+#    in the render engine, the image readers and the GX rasterizer among
+#    others), so the targets that request link-time optimization are compiled
+#    normally.
+function(ballance_wii_tune_targets directory)
+    get_property(_targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    foreach (_target IN LISTS _targets)
+        get_target_property(_type ${_target} TYPE)
+        if (_type MATCHES "^(STATIC_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
+            set_target_properties(${_target} PROPERTIES
+                    POSITION_INDEPENDENT_CODE OFF
+                    INTERPROCEDURAL_OPTIMIZATION OFF
+                    INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF
+                    INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO OFF
+                    INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL OFF
+            )
+        endif ()
+    endforeach ()
+    get_property(_subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach (_subdirectory IN LISTS _subdirectories)
+        ballance_wii_tune_targets("${_subdirectory}")
+    endforeach ()
+endfunction()

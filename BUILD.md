@@ -1,0 +1,468 @@
+# Ballanced build system
+
+CMake presets are the primary entry point. The root project assembles a Ballance-compatible runtime from the submodules under `Source/`.
+
+Use manual `cmake -S ... -B ...` commands only when a preset does not cover your generator or architecture.
+
+`CMakePresets.json` is the source of truth for the supported full-runtime matrix. Component-level presets and READMEs cover standalone builds and may intentionally support a narrower matrix.
+
+This guide applies to the default `sdl` branch.
+
+## Prerequisites
+
+| Platform | Toolchain | Generator | CMake |
+|----------|-----------|-----------|-------|
+| Windows (x86 / x64 / ARM64) | Visual Studio 2022 (MSVC) | Visual Studio 17 2022 | 3.25+ |
+| Linux (x64 / ARM64) | GCC or Clang | Ninja | 3.25+ |
+| macOS (x64 / ARM64) | Apple Clang | Ninja | 3.25+ |
+
+SDL3 must be locatable by CMake (`find_package(SDL3 CONFIG REQUIRED)`). Install via your package manager, vcpkg, or build from source and set `CMAKE_PREFIX_PATH`.
+
+## Getting the source
+
+The repository has two levels of Git submodules. Top-level submodules are the components under `Source/`. Several have their own nested submodules (RenderEngine -> bgfx, VxMath -> stb/simde, CK2 -> miniz, BuildingBlocks -> ivp/qhull).
+
+### Fresh clone
+
+```bash
+git clone --recurse-submodules https://github.com/doyaGu/Ballanced.git
+```
+
+### Updating an existing clone
+
+Clones created before `sdl` became the default branch should switch to it before updating:
+
+```bash
+git switch sdl
+git pull --ff-only
+git submodule update --init --recursive
+```
+
+If a submodule URL changed (e.g. after a `.gitmodules` edit):
+
+```bash
+git submodule sync --recursive
+git submodule update --init --recursive
+```
+
+### Checking submodule state
+
+```bash
+git submodule status --recursive
+```
+
+A line prefixed with `-` means that submodule is not initialized. Run `git submodule update --init --recursive` to fix it.
+
+## Recommended commands
+
+Configure:
+
+```bash
+# Windows x86
+cmake --preset windows-x86-runtime
+
+# Windows x64
+cmake --preset windows-x64-runtime
+
+# Linux x64
+cmake --preset linux-x64-runtime
+
+# macOS ARM64
+cmake --preset macos-arm64-runtime
+```
+
+Build and stage:
+
+```bash
+cmake --build --preset windows-x86-runtime-stage-release
+```
+
+Run layout checks:
+
+```bash
+ctest --preset windows-x86-runtime-stage-release
+```
+
+Output path: `build/<configure-preset>/stage/`. For `windows-x86-runtime`:
+
+```
+build/windows-x86-runtime/stage/Bin/Player.exe
+```
+
+Package the stage into a release archive (`.zip`, `.tar.gz`, `.tar.bz2`, or `.tar.xz`) and verify it:
+
+```bash
+cmake -DSTAGE_ROOT=build/windows-x86-runtime/stage -DARCHIVE_PATH=dist/ballance-sdl-windows-x86-runtime.zip -P cmake/PackageStage.cmake
+cmake -DARCHIVE_PATH=dist/ballance-sdl-windows-x86-runtime.zip -DEXTRACT_ROOT=build/package-check -DBALLANCE_COMPONENT_MANIFEST=build/windows-x86-runtime/RuntimeComponents.cmake -P cmake/VerifyReleaseArchive.cmake
+```
+
+This is the only packaging path; CI and releases use the same scripts.
+
+## Preset matrix
+
+Defined in `CMakePresets.json`. To list all available presets:
+
+```bash
+cmake --list-presets
+cmake --build --list-presets
+ctest --list-presets
+```
+
+### Configure presets
+
+| Preset | Platform | Arch | Mode |
+|--------|----------|------|------|
+| `windows-x86-runtime` | Windows | x86 | Shared-module runtime |
+| `windows-x64-runtime` | Windows | x64 | Shared-module runtime |
+| `windows-arm64-runtime` | Windows | ARM64 | Shared-module runtime |
+| `linux-x64-runtime` | Linux | x64 | Shared runtime |
+| `linux-arm64-runtime` | Linux | ARM64 | Shared runtime |
+| `macos-x64-runtime` | macOS | x64 | Shared runtime |
+| `macos-arm64-runtime` | macOS | ARM64 | Shared runtime |
+| `windows-x86-static` | Windows | x86 | Modules linked statically |
+| `windows-x64-static` | Windows | x64 | Modules linked statically |
+| `windows-arm64-static` | Windows | ARM64 | Modules linked statically |
+| `linux-x64-static` | Linux | x64 | Modules linked statically |
+| `linux-arm64-static` | Linux | ARM64 | Modules linked statically |
+| `macos-x64-static` | macOS | x64 | Modules linked statically |
+| `macos-arm64-static` | macOS | ARM64 | Modules linked statically |
+| `windows-x86-tests` | Windows | x86 | Shared runtime + module tests |
+| `windows-x64-tests` | Windows | x64 | Shared runtime + module tests |
+| `windows-arm64-tests` | Windows | ARM64 | Shared runtime + module tests |
+| `linux-x64-tests` | Linux | x64 | Shared runtime + module tests |
+| `linux-arm64-tests` | Linux | ARM64 | Shared runtime + module tests |
+| `macos-x64-tests` | macOS | x64 | Shared runtime + module tests |
+| `macos-arm64-tests` | macOS | ARM64 | Shared runtime + module tests |
+
+When cross-building Windows ARM64 from an x64 Windows host with shader generation enabled,
+RenderEngine builds a host-compatible bgfx `shaderc.exe` automatically. You can still
+override it with `-DCKRE_SHADERC_EXECUTABLE:FILEPATH=<path-to-host-shaderc.exe>`.
+
+### Build presets
+
+Build presets follow `<configure-preset>-release` (plain build) or `<configure-preset>-stage-release` (build + stage install).
+
+| Build preset | Effect |
+|---|---|
+| `windows-x86-runtime-release` | Build Win32 runtime in Release |
+| `windows-x86-runtime-stage-release` | Build and stage Win32 runtime |
+| `windows-x86-static-stage-release` | Build and stage Win32 static build |
+| `linux-x64-runtime-stage-release` | Build and stage Linux x64 runtime |
+| `macos-arm64-runtime-stage-release` | Build and stage macOS ARM64 runtime |
+
+## Runtime layout
+
+The `stage` target installs under `build/<preset>/stage/`. Names below use Windows extensions; Linux and macOS use the platform-native executable and shared-library names (`Player`, `lib*.so`, or `lib*.dylib`).
+
+```
+stage/
+  Bin/
+    Player.exe
+    CK2.dll
+    VxMath.dll
+    SDL3.dll
+  RenderEngines/
+    CK2_3D.dll
+    CKBgfxRasterizer.dll
+  Managers/
+    SdlInputManager.dll
+    SdlSoundManager.dll
+    ParameterOperations.dll
+  Plugins/
+    AVIReader.dll
+    ImageReader.dll
+    WavReader.dll
+    VirtoolsLoader.dll
+  BuildingBlocks/
+    3DTransfo.dll
+    Cameras.dll
+    Collisions.dll
+    ...
+```
+
+If `BALLANCE_ASSETS_ROOT` is set, staging also copies assets from an existing installation:
+
+```
+Textures/
+Sounds/
+Text/
+3D Entities/
+base.cmo
+Database.tdb
+```
+
+A local `assets/` directory can be used explicitly with
+`-DBALLANCE_AUTO_DETECT_ASSETS=ON`. It is disabled by default so ignored local
+files cannot silently change a canonical stage.
+
+## Build modes
+
+### Runtime (default)
+
+Shared modules plus the Player executable.
+
+```bash
+cmake --preset windows-x86-runtime
+cmake --build --preset windows-x86-runtime-stage-release
+```
+
+### Static build
+
+All Virtools modules linked into the Player executable. No separate module shared libraries.
+
+```bash
+cmake --preset windows-x86-static
+cmake --build --preset windows-x86-static-stage-release
+```
+
+### Tests
+
+Tests for Player utilities, CK2, VxMath, RenderEngine, Plugins, and selected Building Blocks.
+
+```bash
+cmake --preset windows-x86-tests
+cmake --build --preset windows-x86-tests-release
+ctest --preset windows-x86-tests-release
+```
+
+The regular CI matrix performs platform and linkage coverage. A dedicated
+Linux x64 job builds and runs this complete test preset on every push and pull
+request to `sdl`.
+
+## RenderEngine standalone
+
+Build independently from `Source/RenderEngine`:
+
+```powershell
+cd Source/RenderEngine
+cmake --preset renderengine-bgfx-runtime-msvc-win32
+cmake --build --preset renderengine-bgfx-runtime-win32-release
+```
+
+| Configure preset | Purpose |
+|---|---|
+| `renderengine-bgfx-runtime-msvc-win32` | Shared bgfx RenderEngine (Win32) |
+| `renderengine-bgfx-runtime-msvc-x64` | Shared bgfx RenderEngine (x64) |
+| `renderengine-bgfx-static-msvc-win32` | Static bgfx RenderEngine (Win32) |
+| `renderengine-bgfx-static-msvc-x64` | Static bgfx RenderEngine (x64) |
+| `renderengine-bgfx-tests-msvc-win32` | bgfx tests (Win32) |
+| `renderengine-bgfx-tests-msvc-x64` | bgfx tests (x64) |
+
+Build presets follow `renderengine-bgfx-<mode>-<arch>-release`.
+
+## Custom configuration
+
+Stage assets from an existing Ballance installation:
+
+```powershell
+cmake --preset windows-x86-runtime -DBALLANCE_ASSETS_ROOT=C:/path/to/Ballance
+cmake --build --preset windows-x86-runtime-stage-release
+```
+
+Or opt into the ignored repository-local `assets/` directory:
+
+```powershell
+cmake --preset windows-x86-runtime -DBALLANCE_AUTO_DETECT_ASSETS=ON
+```
+
+Use a custom stage directory:
+
+```powershell
+cmake --preset windows-x86-runtime -DCMAKE_INSTALL_PREFIX=C:/BallanceStage
+cmake --build --preset windows-x86-runtime-stage-release
+```
+
+Build a single target:
+
+```powershell
+cmake --build --preset windows-x86-runtime-release --target Player
+cmake --build --preset windows-x86-runtime-release --target CK2
+```
+
+## Manual fallback
+
+**Windows:**
+
+```powershell
+cmake -S . -B build/manual-win32 -G "Visual Studio 17 2022" -A Win32
+cmake --build build/manual-win32 --config Release --target stage
+ctest --test-dir build/manual-win32 -C Release --output-on-failure
+```
+
+**Linux / macOS:**
+
+```bash
+cmake -S . -B build/manual -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/manual --target stage
+ctest --test-dir build/manual --output-on-failure
+```
+
+## Nintendo Wii
+
+The Wii build is one Homebrew Channel application with every module linked in. libogc takes SDL3's place: `Source/WiiPlatform` provides the VxMath platform layer and system services, `Source/WiiRasterizer` renders with GX, and `Source/Managers/WiiInputManager` and `WiiSoundManager` stand in for the SDL3 managers. Shared engine code that needs big-endian or Wii-specific changes is patched at configure time from `Source/WiiPatches` (see `cmake/WiiPort.cmake`), so the submodules stay unmodified.
+
+### Building
+
+Install devkitPro with the `wii-dev` package group, then configure and build from a devkitPro shell (the devkitPro MSYS2 shell on Windows):
+
+```bash
+cmake -S . -B build/wii -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/wii.cmake -DCMAKE_BUILD_TYPE=Release
+cmake --build build/wii --target WiiPlayer WiiPlayerTests
+```
+
+This produces `build/wii/Source/WiiPlayer/boot.dol` (the game) and `tests.dol` (the on-console tests).
+
+### Installing
+
+`cmake --install build/wii --prefix <SD card root>` writes `boot.dol`, `meta.xml`, `icon.png` and a fallback font to `apps/ballance/`. Copy the game files from your own Ballance installation into the same folder:
+
+```
+apps/ballance/
+  boot.dol
+  meta.xml
+  icon.png
+  base.cmo
+  Database.tdb
+  3D Entities/
+  Sounds/
+  Sounds_low/     the game picks its smaller sounds when memory is short,
+                  as it always is on the Wii
+  Text/
+  Textures/
+  Fonts/          Roboto, standing in for Windows fonts; add TrueType fonts
+                  (e.g. Arial) to match the PC game's text exactly
+  Wii/Text/       tutorial texts naming the Wii controls, read instead of the
+                  game's own (installed with boot.dol)
+  Wii/Cache/      collision surfaces the game has built (written by the game)
+```
+
+Start it from the Homebrew Channel. The game runs from the folder `boot.dol` was started from, on an SD card or a USB drive; when the loader passes no path it looks for `apps/ballance/` or `ballance/` on either device. `Player.ini` and `Player.log` are written to that folder, and so are the game's settings and high scores (`Database.tdb`, `registry.ini`).
+
+Loading a level builds a collision surface for each physical object from its meshes; in Dolphin that was over a third of the game's work while Level 12 loads. The game keeps the surfaces it builds, keyed by the geometry they come from: in memory, so loading a level again after leaving it reuses them, and in `Wii/Cache/PhysicsShapes.dat` and `PhysicsShapes.idx`, which a background thread writes while the game waits for the TV, so the next start can read them instead. A surface is only read when that has been quicker than building it was, judged by how fast the card has read so far: Dolphin reads its SD card at once, a console reads a few megabytes a second, so there the large floors of a level may still be built. The files grow with each level played (Level 12 adds about 5.5 MB; they stop growing at 64 MB), may be deleted while the game is not running, and are started afresh when another build of the game's physics engine finds them. Under `[Wii]` in `Player.ini`, `PhysicsCache` chooses where surfaces are kept (0 nowhere, 1 in memory, 2 in memory and in the files, the default), `PhysicsCacheMemory` how many megabytes of surfaces no object uses stay in memory (8; they give way whenever less than 16 MB are free), and `PhysicsCacheLog = 1` lists each surface in `Player.log` with where it came from and a hash of its structure. `PhysicsCacheVerify = 1` builds every reused surface again and logs any that differ (slow; for checking a build).
+
+### Playing
+
+| | Wii Remote sideways | Wii Remote + Nunchuk | Classic / GameCube controller |
+|---|---|---|---|
+| Roll the ball | Tilt | Control Stick | Stick or D-Pad |
+| Turn the view | D-Pad left or right | D-Pad left or right | Hold Y, L or ZL / Y, L or Z and press left or right |
+| Overhead camera | D-Pad up, or 2 | D-Pad up, or C | X, R, ZR / X, R |
+| Take the current hold as level | D-Pad down | | |
+| Confirm | A | A | A |
+| Back, pause | + | + or B | B or + / B or Start |
+| Skip the tutorial (first page) | - | - | - / none |
+
+Held sideways on its own, the Wii Remote is the floor the ball rolls on: tip its far edge down to roll forward and its right end down to roll right. Level is however the remote rests when play starts or resumes, so settle into a comfortable hold then; pressing down on the D-Pad, or pausing and resuming with +, takes the way it is held now as level. The first few degrees do nothing, about 20 degrees is full speed, and smaller tilts push more gently. In the menus the D-Pad moves through them as usual. With a Nunchuk, Classic Controller or GameCube controller there is no tilt. `TiltControls = 0` under `[Wii]` in `Player.ini` turns it off for a lone Wii Remote as well; its D-Pad then rolls the ball, and holding 1 while pressing left or right turns the view.
+
+The controllers follow the keys chosen in Options > Controls, including those in a `Database.tdb` brought over from a PC: rolling and the two camera buttons press whatever keys the game has bound, and the D-Pad still moves through the menus.
+
+Where the game uses the mouse, pointing the Wii Remote at the screen shows a pointer and A clicks; elsewhere A confirms like Enter, so menus made for the keyboard still work while pointing. A USB keyboard works as on a PC.
+
+When the game asks for a name, an on-screen keyboard appears: point at a key and press A, or move with the D-Pad or a stick and press A (2 on a sideways remote, C on a Nunchuk). B deletes, + (Start) confirms and - toggles Shift, which starts on for a capital first letter.
+
+HOME (Start + Z on a GameCube controller) opens the HOME menu over the paused game, with the way back to the Homebrew Channel or the Wii Menu and the Wii Remote batteries. Power and Reset on the console work as in any title.
+
+The game starts in the console's language when Ballance has it (German, English, Spanish, Italian or French) and in English otherwise; `Language` in `Player.ini` overrides it (0 German, 1 English, 2 Spanish, 3 Italian, 4 French).
+
+Every half minute `Player.log` records the frame rate, how each frame splits between work (game logic and drawing), waiting for the GPU and waiting for the TV, the longest frame (loading included), how many objects and triangles a frame draws, and how much memory is in use and free (every five seconds with `Verbose = 1`).
+
+### On-console tests
+
+`tests.dol` checks the memory available to the game, state chunk and file byte layouts, media readers and writers, sound playback, fonts, the game database, GX rasterizer output and the system screens drawn over it, building blocks, the on-screen keyboard, physics and a render engine scene, and writes a small demo composition to `sd:/apps/ballance-demo/base.cmo`. Copy it to `apps/wiitests/boot.dol` and start it; results appear on screen and in `sd:/wiitests.log`. When `sd:/wiitests.autoexit` exists the tests leave without waiting for a button, for unattended runs. In Dolphin, enable SD card folder sync and, under Graphics > Hacks, turn off "Skip EFB Access from CPU" and "Store EFB Copies to Texture Only" so the rasterizer checks can read the frame back. Turning on MMU emulation (Config > Advanced) makes invalid memory accesses fault as they would on a console instead of reading zeros. For the game itself, set Graphics > Advanced > Texture Cache Accuracy to Safe: the fast setting samples too few texels to notice each new frame of the intro movie.
+
+### When something goes wrong on the console
+
+`Player.log` next to `boot.dol` records loading errors (for example missing plugin GUIDs) and the periodic frame time and memory figures. If the console stops on an exception screen, note the addresses in the stack trace and look them up in the matching build:
+
+```bash
+powerpc-eabi-addr2line -f -C -e build/wii/Source/WiiPlayer/boot.elf 0x80123456
+```
+
+### Benchmarks and profiles
+
+The game can play itself from a script, so a benchmark or a profile repeats the same way on a console and in Dolphin, with no controller. Put the script in the game folder and name it in `Player.ini`:
+
+```ini
+[Wii]
+Autoplay = bench.txt
+```
+
+Each line is a command (`#` starts a comment; the full list is in `Source/WiiPlayer/AutoplayScript.h`). Times are in frames, so loading, however long it takes, does not throw a script out of step. This one profiles the main menu, then starts Level 1, skips the tutorial, turns the view around and rolls the ball:
+
+```
+wait 240                       # the main menu is up
+report start
+profile start 500              # a sample every 500 microseconds
+wait 600
+profile stop menu.prof
+report stop                    # frame times since "report start", and the
+                               # collision surfaces built or reused, to Player.log
+hold 4 Enter                   # Start
+wait 180
+hold 4 Enter                   # Level 1
+wait 300
+hold 4 Q                       # skip the tutorial
+waitplay 1800                  # until the ball can be rolled
+wait 240
+hold 10 Left_Shift Left_Arrow  # turn the view twice
+wait 40
+hold 10 Left_Shift Left_Arrow
+wait 40
+report start
+profile start 500
+hold 600 Up_Arrow
+profile stop level1.prof
+report stop
+shot level1.tga                # the picture, to compare between builds
+quit
+```
+
+A profile records, a few thousand times a second, where the CPU is and the calls that led there, which phase of the frame it is in (game logic, drawing, waiting for the GPU or the TV, loading) and the frame number. `Source/WiiPlayer/tools/wii_profile.py` turns it into time per function with the symbols of the matching `boot.elf` (it needs `powerpc-eabi-nm` on the `PATH` or devkitPro installed):
+
+```bash
+python Source/WiiPlayer/tools/wii_profile.py build/wii/Source/WiiPlayer/boot.elf level1.prof --thread main
+```
+
+"Self" is time in a function's own code and "total" includes what it calls. `--phase draw` (or `logic`, `load`, ...) keeps one part of the frame, `--longest 5` keeps the five frames the game worked on longest, to see what causes a hitch, and `--callers NAME` and `--callees NAME` show who calls a function and what it calls. Samples are taken from a timer interrupt, so time spent with interrupts masked (inside the allocator, for instance) shows at the point where they come back on.
+
+To run a script in Dolphin without touching its window, start the ELF in batch mode with SD card folder sync on, e.g. `Dolphin.exe -u <user folder> -b -e boot.elf`: `quit` at the end of the script stops the emulation, which writes the SD card folder back with `Player.log`, the profiles and the pictures. A user folder of its own (`-u`) keeps the run's settings apart from your Dolphin's, and with no controller mapped there the script is the only input. Dolphin does not model the console's caches or the SD card's speed, so memory-bound code and loading cost more on a Wii than it shows; the figures from a console are the final word, and the same script and profiler run there.
+
+## Troubleshooting
+
+### `stage` fails after CMake file changes
+
+Re-run configure first:
+
+```bash
+cmake --preset windows-x86-runtime
+cmake --build --preset windows-x86-runtime-stage-release
+```
+
+### Stage layout verification fails
+
+CTest output shows the missing file or directory:
+
+```bash
+ctest --preset windows-x86-runtime-stage-release
+```
+
+### Missing runtime DLLs
+
+The default build target does not run the install step. Use the stage preset:
+
+```bash
+cmake --build --preset windows-x86-runtime-stage-release
+```
+
+### SDL3 not found
+
+```bash
+cmake --preset windows-x86-runtime -DCMAKE_PREFIX_PATH=C:/SDL3
+```
+
+## Notes
+
+- CMake presets require CMake 3.25+. The `cmake_minimum_required` in project files is lower to support manual builds.
+- `MidiManager` is disabled automatically on non-Windows platforms.
+- `BALLANCE_DIR` identifies and validates a live Ballance installation as a manual deployment destination; staging does not copy files there automatically.
+- Ballanced and its submodules are independently versioned. Root releases pin exact component commits; component version numbers do not need to match the root project version.

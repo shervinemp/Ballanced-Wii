@@ -1,0 +1,30 @@
+Ballance for Wii (Ballanced Wii port)
+Copyright (C) 2026 Ballanced Wii port contributors
+Upstream Ballanced: Copyright (C) 2022 kakuty and contributors
+
+The original port code and the upstream Ballanced root are licensed under the
+MIT License (see LICENSE). The upstream engine submodules are MIT or
+Apache-2.0; third-party components keep their own licences. See
+THIRD_PARTY_NOTICES.md, CREDITS.md and the LICENSE files in the submodules.
+
+The following files are Ballance-derived artwork/text and are NOT covered by
+the MIT License:
+
+- Source/WiiPlayer/hbc/icon.png
+- Source/WiiPlayer/data/Text/Tutorial1.txt through Tutorial5.txt
+
+They remain the property of the original Ballance rights holders. They are
+included only as the Wii port's Homebrew Channel icon and tutorial overlay.
+If you do not own a legal copy of Ballance, remove them. Do not redistribute
+them as MIT-licensed material.
+
+No full game data, executable, ISO, database, sound, texture or other game
+asset is included in this repository. You must supply your own Ballance
+installation to play.
+
+Ballance and its related marks belong to their respective owners. This is an
+unofficial, non-commercial fan project, not affiliated with or endorsed by the
+original developers or publishers.
+
+This software is experimental and comes with no warranty, to the extent
+permitted by law. See the licence texts for the full disclaimers.

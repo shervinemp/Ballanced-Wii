@@ -1,0 +1,209 @@
+# Wii player: boot.dol for the Homebrew Channel, with every Virtools module linked in.
+
+set(_player_src "${CMAKE_SOURCE_DIR}/Source/Player/src")
+set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+# Values consumed by Player's config.h.in (normally set by Player's own CMakeLists).
+set(_player_default_rasterizer "gx")
+set(PLAYER_SCREEN_WIDTH 640)
+set(PLAYER_SCREEN_HEIGHT 480)
+set(PLAYER_SCREEN_BPP 32)
+configure_file("${_player_src}/config.h.in" "${_generated}/config.h" @ONLY)
+
+# The desktop player's module list, with the Wii managers standing in for the
+# SDL3 ones under the same plugin entry points.
+include("${CMAKE_SOURCE_DIR}/Source/Player/cmake/PlayerStaticModules.cmake")
+set(PLAYER_STATIC_MODULE_SdlInputManager_STATIC_TARGET WiiInputManager)
+set(PLAYER_STATIC_MODULE_SdlInputManager_DISPLAY_NAME WiiInputManager)
+set(PLAYER_STATIC_MODULE_SdlSoundManager_STATIC_TARGET WiiSoundManager)
+set(PLAYER_STATIC_MODULE_SdlSoundManager_DISPLAY_NAME WiiSoundManager)
+
+set(PLAYER_STATIC_PLUGIN_DECLARATIONS "")
+set(PLAYER_STATIC_PLUGIN_ENTRIES "")
+set(_static_targets "")
+set(_static_definitions "")
+foreach (_module IN LISTS PLAYER_STATIC_MODULES)
+    set(_prefix "PLAYER_STATIC_MODULE_${_module}")
+    set(_target "${${_prefix}_STATIC_TARGET}")
+    set(_macro "${${_prefix}_COMPILE_DEFINITION}")
+    if (NOT TARGET ${_target})
+        if (${_prefix}_REQUIRED)
+            message(FATAL_ERROR "The Wii player requires target ${_target}")
+        endif ()
+        continue()
+    endif ()
+    list(APPEND _static_targets ${_target})
+    list(APPEND _static_definitions "${_macro}=1")
+    if (${_prefix}_LINK_ONLY)
+        continue()
+    endif ()
+
+    foreach (_field IN ITEMS GET_INFO_COUNT GET_INFO GET_READER REGISTER_DECLARATIONS)
+        set(_${_field} "${${_prefix}_${_field}}")
+        if (_${_field})
+            set(_${_field}_value "${_${_field}}")
+        else ()
+            set(_${_field}_value NULL)
+        endif ()
+    endforeach ()
+
+    string(APPEND PLAYER_STATIC_PLUGIN_DECLARATIONS "#if defined(${_macro})\n")
+    if (_GET_INFO_COUNT)
+        string(APPEND PLAYER_STATIC_PLUGIN_DECLARATIONS "extern int ${_GET_INFO_COUNT}();\n")
+    endif ()
+    string(APPEND PLAYER_STATIC_PLUGIN_DECLARATIONS "extern CKPluginInfo *${_GET_INFO}(int);\n")
+    if (_GET_READER)
+        string(APPEND PLAYER_STATIC_PLUGIN_DECLARATIONS "extern CKDataReader *${_GET_READER}(int);\n")
+    endif ()
+    if (_REGISTER_DECLARATIONS)
+        string(APPEND PLAYER_STATIC_PLUGIN_DECLARATIONS "extern void ${_REGISTER_DECLARATIONS}(XObjectDeclarationArray *);\n")
+    endif ()
+    string(APPEND PLAYER_STATIC_PLUGIN_DECLARATIONS "#endif\n\n")
+    string(APPEND PLAYER_STATIC_PLUGIN_ENTRIES
+            "#if defined(${_macro})\n"
+            "    {\"${${_prefix}_DISPLAY_NAME}\", ${_GET_INFO_COUNT_value}, ${_GET_INFO_value}, ${_GET_READER_value}, ${_REGISTER_DECLARATIONS_value}},\n"
+            "#endif\n")
+endforeach ()
+configure_file("${_player_src}/StaticPluginRegistry.generated.h.in"
+        "${_generated}/StaticPluginRegistry.generated.h" @ONLY)
+
+# Linked into each executable: a 1 MB main stack, like Windows gives the
+# engine (MainStack.c), backslashes in file names (PathSeparators.c), a sqrtf
+# that uses the hardware estimate instead of newlib's (FastMath.c), a cheaper
+# heap lock (HeapLock.c), word-wise memcpy and memset (FastMemory.c) and pools
+# for small allocations (SmallBlocks.c).
+set(_console_runtime
+        "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/MainStack.c"
+        "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/PathSeparators.c"
+        "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/FastMath.c"
+        "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/HeapLock.c"
+        "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/FastMemory.c"
+        "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/SmallBlocks.c")
+# GCC would otherwise turn FastMemory.c's loops back into memcpy and memset calls.
+set_source_files_properties("${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/FastMemory.c"
+        PROPERTIES COMPILE_OPTIONS "-fno-tree-loop-distribute-patterns;-fno-builtin")
+set(_runtime_wraps _open_r _stat_r lstat _unlink_r _rename_r _rmdir_r rmdir mkdir opendir chdir statvfs
+        __malloc_lock __malloc_unlock
+        _malloc_r _free_r _realloc_r _calloc_r _memalign_r _malloc_usable_size_r)
+list(TRANSFORM _runtime_wraps PREPEND "LINKER:--wrap=")
+# DolAlign.ld rounds the code and data segments up to 32 bytes, so each DOL
+# section size is a multiple of 32. Giving -T replaces the linker script gcc
+# picks for -mrvl, so rvl.ld is named after it.
+set(_dol_align "${CMAKE_SOURCE_DIR}/Source/WiiPlatform/System/DolAlign.ld")
+set(_console_link_options ${_runtime_wraps} "SHELL:-T \"${_dol_align}\"" "SHELL:-T rvl.ld")
+
+add_executable(WiiPlayer
+        main.cpp
+        ${_console_runtime}
+        AutoplayScript.cpp
+        AutoplayScript.h
+        WiiGamePlayer.cpp
+        WiiGamePlayer.h
+        "${_player_src}/GameConfig.cpp"
+        "${_player_src}/Hotfix.cpp"
+        "${_player_src}/IniFile.cpp"
+        "${_player_src}/Logger.cpp"
+        "${_player_src}/StaticPlugins.cpp"
+        "${_player_src}/Utils.cpp"
+)
+target_compile_features(WiiPlayer PRIVATE cxx_std_17)
+target_compile_definitions(WiiPlayer PRIVATE BALLANCE_STATIC_MODULES ${_static_definitions})
+target_include_directories(WiiPlayer PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${_player_src}"
+        "${_generated}"
+)
+target_link_libraries(WiiPlayer PRIVATE ${_static_targets} CK2 VxMath WiiSystem)
+target_link_options(WiiPlayer PRIVATE ${_console_link_options})
+set_target_properties(WiiPlayer PROPERTIES OUTPUT_NAME boot SUFFIX ".elf"
+        LINK_DEPENDS "${_dol_align}")
+
+# Wii storage paths ("sd:/") in the shared player helpers.
+ballance_wii_patch(Player
+        ROOT "${CMAKE_SOURCE_DIR}/Source/Player"
+        PATCH "${BALLANCE_WII_PATCH_DIR}/Player/wii-paths.patch"
+        FILES src/Utils.cpp
+        TARGETS WiiPlayer
+)
+
+ogc_create_dol(WiiPlayer)
+
+# On-console tests (tests.dol): state chunk and file byte layouts, media
+# readers and GX rasterizer pixels. Run from the SD card or in Dolphin.
+
+# The font suite installs the Roboto font from the Interface tests (Apache
+# License 2.0), embedded as a C array; configure_file only rewrites it when
+# the bytes change.
+set(_test_font "${CMAKE_SOURCE_DIR}/Source/BuildingBlocks/Interface/tests/fonts/roboto-regular.ttf")
+file(READ "${_test_font}" _test_font_hex HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _test_font_hex "${_test_font_hex}")
+file(WRITE "${_generated}/TestFont.c.in"
+        "const unsigned char kTestFont[] = {${_test_font_hex}};\n"
+        "const unsigned int kTestFontSize = sizeof(kTestFont);\n")
+configure_file("${_generated}/TestFont.c.in" "${_generated}/TestFont.c" COPYONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_test_font}")
+add_executable(WiiPlayerTests
+        tests/main.cpp
+        ${_console_runtime}
+        tests/TestFramework.cpp
+        tests/TestFramework.h
+        tests/ChunkTests.cpp
+        tests/FileTests.cpp
+        tests/ReaderTests.cpp
+        tests/RasterizerTests.cpp
+        tests/SceneTests.cpp
+        tests/SoundTests.cpp
+        tests/DemoComposition.cpp
+        tests/PhysicsTests.cpp
+        tests/PhysicsShapeTests.cpp
+        tests/FontTests.cpp
+        tests/BehaviorTests.cpp
+        tests/DatabaseTests.cpp
+        tests/MemoryTests.cpp
+        tests/MathTests.cpp
+        tests/RuntimeTests.cpp
+        tests/InputTests.cpp
+        "${_generated}/TestFont.c"
+        "${_player_src}/StaticPlugins.cpp"
+)
+target_compile_features(WiiPlayerTests PRIVATE cxx_std_17)
+target_compile_definitions(WiiPlayerTests PRIVATE BALLANCE_STATIC_MODULES ${_static_definitions})
+# The physics, font, database and input suites drive their managers directly.
+target_include_directories(WiiPlayerTests PRIVATE "${_player_src}" "${_generated}"
+        "${CMAKE_SOURCE_DIR}/Source/BuildingBlocks/physics_RT"
+        "${CMAKE_SOURCE_DIR}/Source/BuildingBlocks/Interface"
+        "${CMAKE_SOURCE_DIR}/Source/BuildingBlocks/TT_DatabaseManager_RT"
+        "${CMAKE_SOURCE_DIR}/Source/Managers/WiiInputManager")
+target_link_libraries(WiiPlayerTests PRIVATE ${_static_targets} CKGXRasterizer CK2 VxMath WiiSystem ivp_controller)
+target_link_options(WiiPlayerTests PRIVATE ${_console_link_options})
+set_target_properties(WiiPlayerTests PROPERTIES OUTPUT_NAME tests SUFFIX ".elf"
+        LINK_DEPENDS "${_dol_align}")
+ogc_create_dol(WiiPlayerTests)
+
+# Homebrew Channel layout: apps/ballance/{boot.dol,meta.xml,icon.png}; the
+# game files are copied next to them.
+install(FILES
+        "$<TARGET_FILE_DIR:WiiPlayer>/boot.dol"
+        "${CMAKE_CURRENT_SOURCE_DIR}/hbc/meta.xml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/hbc/icon.png"
+        DESTINATION apps/ballance
+        COMPONENT Runtime
+)
+# The Wii has no system fonts. Text the game draws with a Windows font falls
+# back to Arial-like faces, Roboto among them (Apache License 2.0).
+set(_fonts "${CMAKE_SOURCE_DIR}/Source/BuildingBlocks/Interface/tests/fonts")
+install(FILES "${_fonts}/roboto-regular.ttf" "${_fonts}/roboto-bold.ttf"
+        DESTINATION apps/ballance/Fonts
+        COMPONENT Runtime
+)
+install(FILES "${_fonts}/LICENSE"
+        DESTINATION apps/ballance/Fonts
+        RENAME Roboto-LICENSE.txt
+        COMPONENT Runtime
+)
+# Wii versions of game files written for the PC, read in their place (see
+# VxWiiFindPortFile): the tutorial texts, naming the Wii controls.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/Text"
+        DESTINATION apps/ballance/Wii
+        COMPONENT Runtime
+)

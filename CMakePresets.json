@@ -1,0 +1,810 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-x86-base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "architecture": "Win32",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "windows-x64-base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "windows-arm64-base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "architecture": "ARM64",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "linux-x64-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BALLANCE_TARGET_ARCH": "x64",
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "linux-arm64-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BALLANCE_TARGET_ARCH": "arm64",
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "macos-x64-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64",
+        "BALLANCE_TARGET_ARCH": "x64",
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "macos-arm64-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "BALLANCE_TARGET_ARCH": "arm64",
+        "CKRE_GENERATE_SHADERS": "OFF"
+      }
+    },
+    {
+      "name": "windows-x86-runtime",
+      "displayName": "Windows x86 Runtime",
+      "description": "Build the SDL3 Windows x86 runtime layout with shared modules.",
+      "inherits": "windows-x86-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "windows-x64-runtime",
+      "displayName": "Windows x64 Runtime",
+      "description": "Build the SDL3 Windows x64 runtime layout with shared modules.",
+      "inherits": "windows-x64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "windows-arm64-runtime",
+      "displayName": "Windows ARM64 Runtime",
+      "description": "Build the SDL3 Windows ARM64 runtime layout with shared modules.",
+      "inherits": "windows-arm64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "linux-x64-runtime",
+      "displayName": "Linux x64 Runtime",
+      "description": "Build the SDL3 Linux x64 runtime layout with shared modules.",
+      "inherits": "linux-x64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "linux-arm64-runtime",
+      "displayName": "Linux ARM64 Runtime",
+      "description": "Build the SDL3 Linux ARM64 runtime layout with shared modules.",
+      "inherits": "linux-arm64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "macos-x64-runtime",
+      "displayName": "macOS x64 Runtime",
+      "description": "Build the SDL3 macOS x64 runtime layout with shared modules.",
+      "inherits": "macos-x64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "macos-arm64-runtime",
+      "displayName": "macOS ARM64 Runtime",
+      "description": "Build the SDL3 macOS ARM64 runtime layout with shared modules.",
+      "inherits": "macos-arm64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "OFF"
+      }
+    },
+    {
+      "name": "windows-x86-static",
+      "displayName": "Windows x86 Static",
+      "description": "Build the SDL3 Windows x86 Player with modules linked statically.",
+      "inherits": "windows-x86-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "windows-x64-static",
+      "displayName": "Windows x64 Static",
+      "description": "Build the SDL3 Windows x64 Player with modules linked statically.",
+      "inherits": "windows-x64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "windows-arm64-static",
+      "displayName": "Windows ARM64 Static",
+      "description": "Build the SDL3 Windows ARM64 Player with modules linked statically.",
+      "inherits": "windows-arm64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "linux-x64-static",
+      "displayName": "Linux x64 Static",
+      "description": "Build the SDL3 Linux x64 Player with modules linked statically.",
+      "inherits": "linux-x64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "linux-arm64-static",
+      "displayName": "Linux ARM64 Static",
+      "description": "Build the SDL3 Linux ARM64 Player with modules linked statically.",
+      "inherits": "linux-arm64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "macos-x64-static",
+      "displayName": "macOS x64 Static",
+      "description": "Build the SDL3 macOS x64 Player with modules linked statically.",
+      "inherits": "macos-x64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "macos-arm64-static",
+      "displayName": "macOS ARM64 Static",
+      "description": "Build the SDL3 macOS ARM64 Player with modules linked statically.",
+      "inherits": "macos-arm64-base",
+      "cacheVariables": {
+        "BALLANCE_BUILD_STATIC": "ON"
+      }
+    },
+    {
+      "name": "windows-x86-tests",
+      "displayName": "Windows x86 Tests",
+      "description": "Build the SDL3 Windows x86 runtime plus module tests.",
+      "inherits": "windows-x86-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-x64-tests",
+      "displayName": "Windows x64 Tests",
+      "description": "Build the SDL3 Windows x64 runtime plus module tests.",
+      "inherits": "windows-x64-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "windows-arm64-tests",
+      "displayName": "Windows ARM64 Tests",
+      "description": "Build the SDL3 Windows ARM64 runtime plus module tests.",
+      "inherits": "windows-arm64-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-x64-tests",
+      "displayName": "Linux x64 Tests",
+      "description": "Build the SDL3 Linux x64 runtime plus module tests.",
+      "inherits": "linux-x64-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "linux-arm64-tests",
+      "displayName": "Linux ARM64 Tests",
+      "description": "Build the SDL3 Linux ARM64 runtime plus module tests.",
+      "inherits": "linux-arm64-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "macos-x64-tests",
+      "displayName": "macOS x64 Tests",
+      "description": "Build the SDL3 macOS x64 runtime plus module tests.",
+      "inherits": "macos-x64-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "macos-arm64-tests",
+      "displayName": "macOS ARM64 Tests",
+      "description": "Build the SDL3 macOS ARM64 runtime plus module tests.",
+      "inherits": "macos-arm64-runtime",
+      "cacheVariables": {
+        "CK2_BUILD_TESTS": "ON",
+        "VXMATH_BUILD_TESTS": "ON",
+        "CKRE_BUILD_TESTS": "ON",
+        "CKBB_BUILD_TESTS": "ON",
+        "CKPLUGINS_BUILD_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-x86-runtime-release",
+      "displayName": "Windows x86 Runtime Release",
+      "configurePreset": "windows-x86-runtime",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-x64-runtime-release",
+      "displayName": "Windows x64 Runtime Release",
+      "configurePreset": "windows-x64-runtime",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-arm64-runtime-release",
+      "displayName": "Windows ARM64 Runtime Release",
+      "configurePreset": "windows-arm64-runtime",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-x64-runtime-release",
+      "displayName": "Linux x64 Runtime Release",
+      "configurePreset": "linux-x64-runtime"
+    },
+    {
+      "name": "linux-arm64-runtime-release",
+      "displayName": "Linux ARM64 Runtime Release",
+      "configurePreset": "linux-arm64-runtime"
+    },
+    {
+      "name": "macos-x64-runtime-release",
+      "displayName": "macOS x64 Runtime Release",
+      "configurePreset": "macos-x64-runtime"
+    },
+    {
+      "name": "macos-arm64-runtime-release",
+      "displayName": "macOS ARM64 Runtime Release",
+      "configurePreset": "macos-arm64-runtime"
+    },
+    {
+      "name": "windows-x86-runtime-stage-release",
+      "displayName": "Windows x86 Runtime Stage Release",
+      "configurePreset": "windows-x86-runtime",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-x64-runtime-stage-release",
+      "displayName": "Windows x64 Runtime Stage Release",
+      "configurePreset": "windows-x64-runtime",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-arm64-runtime-stage-release",
+      "displayName": "Windows ARM64 Runtime Stage Release",
+      "configurePreset": "windows-arm64-runtime",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "linux-x64-runtime-stage-release",
+      "displayName": "Linux x64 Runtime Stage Release",
+      "configurePreset": "linux-x64-runtime",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "linux-arm64-runtime-stage-release",
+      "displayName": "Linux ARM64 Runtime Stage Release",
+      "configurePreset": "linux-arm64-runtime",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "macos-x64-runtime-stage-release",
+      "displayName": "macOS x64 Runtime Stage Release",
+      "configurePreset": "macos-x64-runtime",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "macos-arm64-runtime-stage-release",
+      "displayName": "macOS ARM64 Runtime Stage Release",
+      "configurePreset": "macos-arm64-runtime",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-x86-static-release",
+      "displayName": "Windows x86 Static Release",
+      "configurePreset": "windows-x86-static",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-x64-static-release",
+      "displayName": "Windows x64 Static Release",
+      "configurePreset": "windows-x64-static",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-arm64-static-release",
+      "displayName": "Windows ARM64 Static Release",
+      "configurePreset": "windows-arm64-static",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-x64-static-release",
+      "displayName": "Linux x64 Static Release",
+      "configurePreset": "linux-x64-static"
+    },
+    {
+      "name": "linux-arm64-static-release",
+      "displayName": "Linux ARM64 Static Release",
+      "configurePreset": "linux-arm64-static"
+    },
+    {
+      "name": "macos-x64-static-release",
+      "displayName": "macOS x64 Static Release",
+      "configurePreset": "macos-x64-static"
+    },
+    {
+      "name": "macos-arm64-static-release",
+      "displayName": "macOS ARM64 Static Release",
+      "configurePreset": "macos-arm64-static"
+    },
+    {
+      "name": "windows-x86-static-stage-release",
+      "displayName": "Windows x86 Static Stage Release",
+      "configurePreset": "windows-x86-static",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-x64-static-stage-release",
+      "displayName": "Windows x64 Static Stage Release",
+      "configurePreset": "windows-x64-static",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-arm64-static-stage-release",
+      "displayName": "Windows ARM64 Static Stage Release",
+      "configurePreset": "windows-arm64-static",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "linux-x64-static-stage-release",
+      "displayName": "Linux x64 Static Stage Release",
+      "configurePreset": "linux-x64-static",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "linux-arm64-static-stage-release",
+      "displayName": "Linux ARM64 Static Stage Release",
+      "configurePreset": "linux-arm64-static",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "macos-x64-static-stage-release",
+      "displayName": "macOS x64 Static Stage Release",
+      "configurePreset": "macos-x64-static",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "macos-arm64-static-stage-release",
+      "displayName": "macOS ARM64 Static Stage Release",
+      "configurePreset": "macos-arm64-static",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-x86-tests-release",
+      "displayName": "Windows x86 Tests Release",
+      "configurePreset": "windows-x86-tests",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-x64-tests-release",
+      "displayName": "Windows x64 Tests Release",
+      "configurePreset": "windows-x64-tests",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-arm64-tests-release",
+      "displayName": "Windows ARM64 Tests Release",
+      "configurePreset": "windows-arm64-tests",
+      "configuration": "Release"
+    },
+    {
+      "name": "linux-x64-tests-release",
+      "displayName": "Linux x64 Tests Release",
+      "configurePreset": "linux-x64-tests"
+    },
+    {
+      "name": "linux-arm64-tests-release",
+      "displayName": "Linux ARM64 Tests Release",
+      "configurePreset": "linux-arm64-tests"
+    },
+    {
+      "name": "macos-x64-tests-release",
+      "displayName": "macOS x64 Tests Release",
+      "configurePreset": "macos-x64-tests"
+    },
+    {
+      "name": "macos-arm64-tests-release",
+      "displayName": "macOS ARM64 Tests Release",
+      "configurePreset": "macos-arm64-tests"
+    },
+    {
+      "name": "windows-x86-tests-stage-release",
+      "displayName": "Windows x86 Tests Stage Release",
+      "configurePreset": "windows-x86-tests",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-x64-tests-stage-release",
+      "displayName": "Windows x64 Tests Stage Release",
+      "configurePreset": "windows-x64-tests",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "windows-arm64-tests-stage-release",
+      "displayName": "Windows ARM64 Tests Stage Release",
+      "configurePreset": "windows-arm64-tests",
+      "configuration": "Release",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "linux-x64-tests-stage-release",
+      "displayName": "Linux x64 Tests Stage Release",
+      "configurePreset": "linux-x64-tests",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "linux-arm64-tests-stage-release",
+      "displayName": "Linux ARM64 Tests Stage Release",
+      "configurePreset": "linux-arm64-tests",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "macos-x64-tests-stage-release",
+      "displayName": "macOS x64 Tests Stage Release",
+      "configurePreset": "macos-x64-tests",
+      "targets": [
+        "stage"
+      ]
+    },
+    {
+      "name": "macos-arm64-tests-stage-release",
+      "displayName": "macOS ARM64 Tests Stage Release",
+      "configurePreset": "macos-arm64-tests",
+      "targets": [
+        "stage"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-x86-runtime-stage-release",
+      "displayName": "Windows x86 Runtime Stage Tests Release",
+      "configurePreset": "windows-x86-runtime",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64-runtime-stage-release",
+      "displayName": "Windows x64 Runtime Stage Tests Release",
+      "configurePreset": "windows-x64-runtime",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-arm64-runtime-stage-release",
+      "displayName": "Windows ARM64 Runtime Stage Tests Release",
+      "configurePreset": "windows-arm64-runtime",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-x64-runtime-stage-release",
+      "displayName": "Linux x64 Runtime Stage Tests Release",
+      "configurePreset": "linux-x64-runtime",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arm64-runtime-stage-release",
+      "displayName": "Linux ARM64 Runtime Stage Tests Release",
+      "configurePreset": "linux-arm64-runtime",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-x64-runtime-stage-release",
+      "displayName": "macOS x64 Runtime Stage Tests Release",
+      "configurePreset": "macos-x64-runtime",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-runtime-stage-release",
+      "displayName": "macOS ARM64 Runtime Stage Tests Release",
+      "configurePreset": "macos-arm64-runtime",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x86-static-stage-release",
+      "displayName": "Windows x86 Static Stage Tests Release",
+      "configurePreset": "windows-x86-static",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64-static-stage-release",
+      "displayName": "Windows x64 Static Stage Tests Release",
+      "configurePreset": "windows-x64-static",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-arm64-static-stage-release",
+      "displayName": "Windows ARM64 Static Stage Tests Release",
+      "configurePreset": "windows-arm64-static",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-x64-static-stage-release",
+      "displayName": "Linux x64 Static Stage Tests Release",
+      "configurePreset": "linux-x64-static",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arm64-static-stage-release",
+      "displayName": "Linux ARM64 Static Stage Tests Release",
+      "configurePreset": "linux-arm64-static",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-x64-static-stage-release",
+      "displayName": "macOS x64 Static Stage Tests Release",
+      "configurePreset": "macos-x64-static",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-static-stage-release",
+      "displayName": "macOS ARM64 Static Stage Tests Release",
+      "configurePreset": "macos-arm64-static",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x86-tests-release",
+      "displayName": "Windows x86 Module Tests Release",
+      "configurePreset": "windows-x86-tests",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64-tests-release",
+      "displayName": "Windows x64 Module Tests Release",
+      "configurePreset": "windows-x64-tests",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-arm64-tests-release",
+      "displayName": "Windows ARM64 Module Tests Release",
+      "configurePreset": "windows-arm64-tests",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-x64-tests-release",
+      "displayName": "Linux x64 Module Tests Release",
+      "configurePreset": "linux-x64-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-arm64-tests-release",
+      "displayName": "Linux ARM64 Module Tests Release",
+      "configurePreset": "linux-arm64-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-x64-tests-release",
+      "displayName": "macOS x64 Module Tests Release",
+      "configurePreset": "macos-x64-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-tests-release",
+      "displayName": "macOS ARM64 Module Tests Release",
+      "configurePreset": "macos-arm64-tests",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

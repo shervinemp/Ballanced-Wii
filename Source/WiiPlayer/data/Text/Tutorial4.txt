@@ -1,0 +1,41 @@
+Introduzione al gioco:
+Premi + in qualsiasi momento per mettere in pausa o abbandonare il gioco.
+Premi A per continuare l'introduzione o - per saltarla.
+*Ruotare la visuale:
+Premi la pulsantiera di comando a sinistra o a destra per ruotare la visuale di 90° alla volta.
+
+Continua con A ...
+*Panoramica:
+Tieni premuta la pulsantiera di comando verso l'alto per alzare il punto di vista.
+
+Continua con A ...
+*Navigazione:
+Ruota la visuale finché il percorso con le due torri non si trova davanti a te.
+Inclina il telecomando Wii tenuto di lato per muovere la palla (Nunchuk: levetta di controllo). Pulsantiera giù: la tua posizione diventa orizzontale.
+
+Segui il percorso!
+*Vita extra:
+Se cadi dal percorso perdi una vita. Le vite che ti restano sono indicate in basso a destra. Raccogliendo una vita extra ne guadagni un'altra.
+
+Continua con A ...
+*Trasformatori:
+I trasformatori cambiano il materiale della tua palla. La superficie del campo del trasformatore indica quale materiale otterrai. Questo è un trasformatore di pietra.
+
+Continua con A ...
+*Questa salita è troppo ripida per una palla di pietra!
+Cerca un trasformatore di legno e riprova.
+Suggerimento: ruota ogni tanto la visuale (pulsantiera di comando sinistra/destra) per orientarti. Attenzione quando rotoli all'indietro!
+
+Continua con A ...
+*Punti extra:
+L'indicatore a sinistra mostra i tuoi punti tempo, che calano di continuo durante il gioco. Raccogli i punti extra per aumentare il punteggio.
+
+Continua con A ...
+*Checkpoint:
+Questo è il primo checkpoint del tuo percorso. Se perdi una vita, riprenderai dall'ultimo checkpoint superato.
+
+Continua con A ...
+*Per finire:
+Premi HOME in qualsiasi momento per aprire il menu HOME, da cui puoi tornare all'Homebrew Channel o al menu Wii.
+
+Esci dall'introduzione con A ...

@@ -1,0 +1,252 @@
+diff --git a/BuildingBlocksAddons1/Behaviors/CombineTexture.cpp b/BuildingBlocksAddons1/Behaviors/CombineTexture.cpp
+index 0467058..948bf17 100644
+--- a/BuildingBlocksAddons1/Behaviors/CombineTexture.cpp
++++ b/BuildingBlocksAddons1/Behaviors/CombineTexture.cpp
+@@ -3,6 +3,13 @@
+ /////////////////////////////////////////////////////
+ #include "CKAll.h"
+ 
++// Byte offset of each channel in a texel, a host-order ARGB word.
++#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
++enum { kTexelBlue = 3, kTexelGreen = 2, kTexelRed = 1, kTexelAlpha = 0 };
++#else
++enum { kTexelBlue = 0, kTexelGreen = 1, kTexelRed = 2, kTexelAlpha = 3 };
++#endif
++
+ CKObjectDeclaration *FillBehaviorCombineTextureDecl();
+ CKERROR CreateCombineTextureProto(CKBehaviorPrototype **);
+ int CombineTexture(const CKBehaviorContext &behcontext);
+@@ -115,18 +122,12 @@ int CombineTexture(const CKBehaviorContext &behcontext)
+                 {
+                     for (int i = 0; i < width * height; ++i)
+                     {
+-                        *tempdata = (unsigned char)((*tempdata) * invcolf.b + (*coldata) * colf.b);
+-                        tempdata++;
+-                        coldata++;
+-                        *tempdata = (unsigned char)((*tempdata) * invcolf.g + (*coldata) * colf.g);
+-                        tempdata++;
+-                        coldata++;
+-                        *tempdata = (unsigned char)((*tempdata) * invcolf.r + (*coldata) * colf.r);
+-                        tempdata++;
+-                        coldata++;
+-                        *tempdata = (unsigned char)((*tempdata) * invcolf.a + (*coldata) * colf.a);
+-                        tempdata++;
+-                        coldata++;
++                        tempdata[kTexelBlue] = (unsigned char)(tempdata[kTexelBlue] * invcolf.b + coldata[kTexelBlue] * colf.b);
++                        tempdata[kTexelGreen] = (unsigned char)(tempdata[kTexelGreen] * invcolf.g + coldata[kTexelGreen] * colf.g);
++                        tempdata[kTexelRed] = (unsigned char)(tempdata[kTexelRed] * invcolf.r + coldata[kTexelRed] * colf.r);
++                        tempdata[kTexelAlpha] = (unsigned char)(tempdata[kTexelAlpha] * invcolf.a + coldata[kTexelAlpha] * colf.a);
++                        tempdata += 4;
++                        coldata += 4;
+                     }
+                 }
+             }
+@@ -147,11 +148,11 @@ int CombineTexture(const CKBehaviorContext &behcontext)
+                 if ((alphatex->GetWidth() == width) && (alphatex->GetHeight() == height))
+                 {
+                     CKBYTE *tempdata = data;
++                    // The alpha texture's blue channel becomes the alpha.
+                     for (int i = 0; i < width * height; ++i)
+                     {
+-                        tempdata += 3;
+-                        *tempdata = (*coldata);
+-                        tempdata++;
++                        tempdata[kTexelAlpha] = coldata[kTexelBlue];
++                        tempdata += 4;
+                         coldata += 4;
+                     }
+                 }
+diff --git a/TT_DatabaseManager_RT/DatabaseManager.cpp b/TT_DatabaseManager_RT/DatabaseManager.cpp
+index 0947ac6..23bc21c 100644
+--- a/TT_DatabaseManager_RT/DatabaseManager.cpp
++++ b/TT_DatabaseManager_RT/DatabaseManager.cpp
+@@ -29,12 +29,32 @@ static inline unsigned char rotr8(unsigned char val, int shift)
+     return (val >> shift) | (val << (8 - shift));
+ }
+ 
++// Database files store ints and floats in little-endian order on every host,
++// at offsets that need not be aligned.
++static void SwapLittleEndian32(void *value)
++{
++    CKConvertEndianArray32(value, 1);
++}
++
++static void StoreInt32At(char *buffer, int offset, int value)
++{
++    SwapLittleEndian32(&value);
++    memcpy(buffer + offset, &value, sizeof(int));
++}
++
++static void StoreFloatAt(char *buffer, int offset, float value)
++{
++    SwapLittleEndian32(&value);
++    memcpy(buffer + offset, &value, sizeof(float));
++}
++
+ static bool ReadInt32At(const char *buffer, int bufferSize, int offset, int *outValue)
+ {
+     if (!buffer || !outValue || offset < 0 || offset > bufferSize - (int)sizeof(int))
+         return false;
+ 
+     memcpy(outValue, buffer + offset, sizeof(int));
++    SwapLittleEndian32(outValue);
+     return true;
+ }
+ 
+@@ -44,6 +64,7 @@ static bool ReadFloatAt(const char *buffer, int bufferSize, int offset, float *o
+         return false;
+ 
+     memcpy(outValue, buffer + offset, sizeof(float));
++    SwapLittleEndian32(outValue);
+     return true;
+ }
+ 
+@@ -169,6 +190,21 @@ int DatabaseManager::Load(CKContext *context, bool autoRegister, CKSTRING arrayN
+     }
+ 
+     FILE *fp = fopen(m_Filename, "rb");
++#ifndef _WIN32
++    if (!fp)
++    {
++        // Compositions name the database relative to the desktop player's
++        // folder ("..\\Database.tdb"); the game root is the current
++        // directory here. Keep the name that opened for later saves.
++        const char *name = strrchr(m_Filename, '/');
++        if (name && *(name + 1))
++        {
++            fp = fopen(name + 1, "rb");
++            if (fp)
++                memmove(m_Filename, name + 1, strlen(name + 1) + 1);
++        }
++    }
++#endif
+     if (!fp)
+     {
+         context->OutputToConsoleExBeep("TT_LoadDatabase: Error when opening file '%s' (errno=%d)", m_Filename, errno);
+@@ -292,6 +328,7 @@ int DatabaseManager::Load(CKContext *context, bool autoRegister, CKSTRING arrayN
+     char *arrayData = &chunk[nameSize + sizeof(int)];
+     ArrayHeader header;
+     memcpy(&header, arrayData, sizeof(ArrayHeader));
++    CKConvertEndianArray32(&header, sizeof(ArrayHeader) / sizeof(int));
+     if (header.columnCount < 0 ||
+         header.rowCount < 0 ||
+         header.keyColumn < -1 ||
+@@ -317,7 +354,9 @@ int DatabaseManager::Load(CKContext *context, bool autoRegister, CKSTRING arrayN
+         }
+ 
+         CKSTRING colName = (CKSTRING)&arrayData[offset];
+-        CK_ARRAYTYPE type = *(CK_ARRAYTYPE *)&arrayData[offset + colNameSize];
++        int typeValue = 0;
++        ReadInt32At(arrayData, arraySize, offset + colNameSize, &typeValue);
++        CK_ARRAYTYPE type = (CK_ARRAYTYPE)typeValue;
+         switch (type)
+         {
+         case CKARRAYTYPE_INT:
+@@ -484,16 +523,16 @@ int DatabaseManager::Save(CKContext *context)
+         }
+         offset += nameLength + 1;
+ 
+-        *(int *)&chunk[offset] = chunkSize - (nameLength + 1 + sizeof(int));
++        StoreInt32At(chunk, offset, chunkSize - (nameLength + 1 + sizeof(int)));
+         offset += sizeof(int);
+ 
+-        *(int *)&chunk[offset] = columnCount;
++        StoreInt32At(chunk, offset, columnCount);
+         offset += sizeof(int);
+ 
+-        *(int *)&chunk[offset] = rowCount;
++        StoreInt32At(chunk, offset, rowCount);
+         offset += sizeof(int);
+ 
+-        *(int *)&chunk[offset] = array->GetKeyColumn();
++        StoreInt32At(chunk, offset, array->GetKeyColumn());
+         offset += sizeof(int);
+ 
+         for (c = 0; c < columnCount; ++c)
+@@ -511,7 +550,7 @@ int DatabaseManager::Save(CKContext *context)
+             }
+             offset += nameLength + 1;
+ 
+-            *(CK_ARRAYTYPE *)&chunk[offset] = array->GetColumnType(c);
++            StoreInt32At(chunk, offset, array->GetColumnType(c));
+             offset += sizeof(CK_ARRAYTYPE);
+         }
+ 
+@@ -526,7 +565,7 @@ int DatabaseManager::Save(CKContext *context)
+                 {
+                     int value = 0;
+                     array->GetElementValue(i, c, &value);
+-                    *(int *)&chunk[offset] = value;
++                    StoreInt32At(chunk, offset, value);
+                     offset += sizeof(int);
+                 }
+                 break;
+@@ -534,7 +573,7 @@ int DatabaseManager::Save(CKContext *context)
+                 {
+                     float value = 0;
+                     array->GetElementValue(i, c, &value);
+-                    *(float *)&chunk[offset] = value;
++                    StoreFloatAt(chunk, offset, value);
+                     offset += sizeof(float);
+                 }
+                 break;
+@@ -621,6 +660,13 @@ bool DatabaseManager::SetProperty(CKSTRING filename, CKBOOL crypted)
+     int len = (int)strlen(filename) + 1;
+     m_Filename = new char[len];
+     strncpy(m_Filename, filename, len);
++#ifndef _WIN32
++    for (char *c = m_Filename; *c; ++c)
++    {
++        if (*c == '\\')
++            *c = '/';
++    }
++#endif
+ 
+     m_Crypted = crypted;
+     return true;
+diff --git a/TT_Gravity_RT/Behaviors/TextureSine.cpp b/TT_Gravity_RT/Behaviors/TextureSine.cpp
+index f794953..ffc8576 100644
+--- a/TT_Gravity_RT/Behaviors/TextureSine.cpp
++++ b/TT_Gravity_RT/Behaviors/TextureSine.cpp
+@@ -122,6 +122,18 @@ CKERROR TextureSineCallBack(const CKBehaviorContext &behcontext)
+ 
+     switch (behcontext.CallbackMessage)
+     {
++#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
++    case CKM_BEHAVIORLOAD:
++    {
++        // The saved UVs are a raw buffer, which files store little-endian.
++        CKParameterLocal *saved = beh->GetLocalParameter(0);
++        CKDWORD *words = saved ? (CKDWORD *)saved->GetWriteDataPtr() : NULL;
++        const int count = words ? saved->GetDataSize() / (int)sizeof(CKDWORD) : 0;
++        for (int i = 0; i < count; i++)
++            ENDIANSWAP32(words[i]);
++    }
++    break;
++#endif
+     case CKM_BEHAVIORATTACH:
+     {
+         // we get the mesh vertices
+diff --git a/TT_Toolbox_RT/Behaviors/HighMapMeshform.cpp b/TT_Toolbox_RT/Behaviors/HighMapMeshform.cpp
+index 30a5386..698ffa4 100644
+--- a/TT_Toolbox_RT/Behaviors/HighMapMeshform.cpp
++++ b/TT_Toolbox_RT/Behaviors/HighMapMeshform.cpp
+@@ -6,6 +6,7 @@
+ //////////////////////////////////////
+ //////////////////////////////////////
+ #include "CKAll.h"
++#include <string.h>
+ #include "ToolboxGuids.h"
+ 
+ CKObjectDeclaration *FillBehaviorHighMapMeshformDecl();
+@@ -122,7 +123,9 @@ int HighMapMeshform(const CKBehaviorContext &behcontext)
+ 
+         // Get pixel value (alpha channel from ARGB)
+         int pixelOffset = u * 4 + v * texWidth * 4;
+-        int alphaValue = surfacePtr[pixelOffset + 3];  // HIBYTE of ARGB = Alpha
++        CKDWORD pixel;
++        memcpy(&pixel, surfacePtr + pixelOffset, sizeof(pixel));
++        int alphaValue = (int)(pixel >> 24);  // Alpha of the ARGB pixel word
+ 
+         // Restore original position
+         pos->x = originalPositions[i].x;
